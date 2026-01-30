@@ -11,8 +11,9 @@ import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { observeUserDisciplines, type Discipline } from "@/infra/services/firebase/disciplineService";
-import { getUnitsByDiscipline, updateUnit } from "@/infra/services/firebase/unitService";
+import { getUnitsByDiscipline, updateUnit, type Unit } from "@/infra/services/firebase/unitService";
 import { ragGenerateCached } from "@/lib/rag/client";
+import { parseAiTextToUnitContent } from "@/lib/rag/aiTextToUnit";
 
 export default function IAGeradorPage() {
   const navigate = useNavigate();
@@ -103,11 +104,19 @@ export default function IAGeradorPage() {
     if (!selectedUnitId || !preview) return;
     try {
       setLoading(true);
-      await updateUnit(selectedUnitId, {
+      const parsed = parseAiTextToUnitContent(preview, { defaultPlanMinutes: 50 });
+      const payload: Partial<Unit> = {
         type: "ai",
         description: preview,
         status: "em_andamento",
-      });
+      };
+      if (parsed.objectives.length) payload.objectives = parsed.objectives;
+      if (parsed.bnccSkills.length) payload.bnccSkills = parsed.bnccSkills;
+      if (parsed.plan.length) {
+        payload.plan = parsed.plan;
+        payload.lessonsCount = parsed.plan.length;
+      }
+      await updateUnit(selectedUnitId, payload);
       toast({ title: "Conteúdo gerado", description: "Unidade atualizada com sucesso." });
       navigate(`/unidades/${selectedUnitId}`);
     } catch {

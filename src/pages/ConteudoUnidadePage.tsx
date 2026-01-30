@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { getUnitById, updateUnit, removeUnit } from "@/infra/services/firebase/unitService";
 import { getDisciplineById } from "@/infra/services/firebase/disciplineService";
+import { parseAiTextToUnitContent, sanitizeBnccSkills } from "@/lib/rag/aiTextToUnit";
 import {
   ArrowLeft,
   Sparkles,
@@ -77,7 +78,8 @@ export default function ConteudoUnidadePage() {
         setTitle(unit.title);
         setType(unit.type);
         setStatus(unit.status);
-        setBnccSkills(unit.bnccSkills ?? []);
+        const bncc = sanitizeBnccSkills(unit.bnccSkills ?? []);
+        setBnccSkills(bncc.valid);
         setDisciplineId(unit.discipline);
         setDescription(unit.description ?? ""); // hidrata sempre, inclusive vazio
         setObjectives(unit.objectives ?? []);
@@ -85,6 +87,11 @@ export default function ConteudoUnidadePage() {
         setCriteriaItems(unit.criteria ?? []);
         setLessons(unit.lessonsCount ?? (unit.plan?.length ?? 0));
         if (typeof unit.durationMinutes === "number") setDurationMinutes(unit.durationMinutes);
+        if (bncc.rejected.length) {
+          try {
+            await updateUnit(unidadeId, { bnccSkills: bncc.valid });
+          } catch { }
+        }
         if (unit.discipline) {
           const d = await getDisciplineById(unit.discipline);
           setDisciplineName(d?.name ?? "");
@@ -242,6 +249,39 @@ const assessment = {
     { id: "slides" as const, label: "Slides", icon: Presentation },
   ];
 
+  const canExtractFromAiText =
+    type === "ai" &&
+    description.trim().length > 0 &&
+    objectives.length === 0 &&
+    bnccSkills.length === 0 &&
+    planItems.length === 0;
+
+  const handleExtractFromAiText = async () => {
+    const parsed = parseAiTextToUnitContent(description, { defaultPlanMinutes: durationMinutes });
+    setObjectives(parsed.objectives);
+    const bncc = sanitizeBnccSkills(parsed.bnccSkills);
+    if (bncc.rejected.length) {
+      toast({
+        title: "Parte do texto foi ignorada",
+        description: "Algumas linhas não pareciam habilidades da BNCC e não foram adicionadas.",
+      });
+    }
+    setBnccSkills(bncc.valid);
+    setPlanItems(parsed.plan);
+    if (parsed.plan.length) {
+      setLessons(parsed.plan.length);
+    }
+    await savePartial(
+      {
+        objectives: parsed.objectives,
+        bnccSkills: bncc.valid,
+        plan: parsed.plan,
+        lessonsCount: parsed.plan.length ? parsed.plan.length : lessons,
+      },
+      { successTitle: "Conteúdo estruturado" }
+    );
+  };
+
   if (loading) {
     return (
       <AppLayout showIllustrations={false}>
@@ -349,6 +389,12 @@ const assessment = {
                   </SelectContent>
                 </Select>
               </div>
+              {canExtractFromAiText && (
+                <Button variant="ai" size="sm" onClick={handleExtractFromAiText} disabled={isSaving}>
+                  <Sparkles className="w-4 h-4" />
+                  Extrair do texto
+                </Button>
+              )}
               <Button variant="outline" size="sm">
                 <Download className="w-4 h-4" />
                 Exportar
@@ -495,7 +541,16 @@ const assessment = {
                         .map((s) => s.trim())
                         .filter(Boolean);
                       if (lines.length === 0) return;
-                      setBnccSkills((prev) => Array.from(new Set([...prev, ...lines])));
+                      const bncc = sanitizeBnccSkills(lines);
+                      if (bncc.rejected.length) {
+                        toast({
+                          title: "Linhas ignoradas",
+                          description: "Somente habilidades no formato BNCC são aceitas aqui.",
+                        });
+                      }
+                      if (bncc.valid.length) {
+                        setBnccSkills((prev) => Array.from(new Set([...prev, ...bncc.valid])));
+                      }
                       (e.target as HTMLTextAreaElement).value = "";
                     }
                   }}

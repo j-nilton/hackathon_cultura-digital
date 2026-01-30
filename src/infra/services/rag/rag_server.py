@@ -92,6 +92,55 @@ def _build_prompt(user_prompt: str, context: List[str], include_assessment: bool
     extras.append("incluir estrutura de slides com títulos e bullets")
   if extras:
     parts.append("Instruções adicionais: " + "; ".join(extras))
+  parts.append(
+    "\n".join(
+      [
+        "Regras de formatação:",
+        "- Responda em português brasileiro.",
+        "- Não repita nem cite literalmente a seção Contexto; use-a apenas como referência.",
+        "- Entregue somente o conteúdo final no formato Markdown, com as seções abaixo e listas bem definidas.",
+        "",
+        "## Descrição",
+        "Um parágrafo curto que resume a unidade.",
+        "",
+        "## Objetivos de Aprendizagem",
+        "- Liste todos os objetivos em bullets, uma frase por item.",
+        "",
+        "## Habilidades da BNCC",
+        "- Uma por linha no formato: CÓDIGO — descrição.",
+        "",
+        "## Planos de aula",
+        "Crie uma sequência em cards, cada um com título, tempo em minutos e descrição:",
+        "### Aula 1 — Título (50 min)",
+        "Descrição do que acontece na aula, com passos e metodologias.",
+        "",
+      ]
+      + (
+        [
+          "## Atividade Avaliativa",
+          "Descreva a atividade avaliativa.",
+          "",
+          "## Critérios de Avaliação",
+          "- Critério — peso (%)",
+          "",
+        ]
+        if include_assessment
+        else []
+      )
+      + (
+        [
+          "## Slides",
+          "Liste a estrutura em tópicos, por exemplo:",
+          "- Slide 1: Título",
+          "  - Bullet 1",
+          "  - Bullet 2",
+          "",
+        ]
+        if include_slides
+        else []
+      )
+    )
+  )
   return "\n\n".join(parts)
 
 def _generate_text(full_prompt: str) -> str:
